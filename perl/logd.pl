@@ -1,5 +1,7 @@
 #!/bin/env perl
-
+# ---------------------------------------------------
+# Author: nomota@mobigen.com, hiongun@gmail.com
+# ---------------------------------------------------
 use strict;
 
 use POSIX;
