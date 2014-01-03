@@ -1,23 +1,5 @@
-#!/usr/local/mobigen/CrediMail/perl/bin/perl
-# ------------------------------------------------------------------------
-# shield_log.d --
-#   UDP ·Î±× µ¥¸ó
-#
-# Author: Nomota KIM Hiongun, nomota@mobigen.com
-#         All rights reserved. (c) Mobigen Inc.
-#
-# Updates:
-#   2004/02/05 dmail.conf°¡ ¾øÀÌ svc.conf¸¸À¸·Îµµ LOG_DIR, LOG_PORT°ªÀ»
-#              ³Ö¾î ÁÙ ¼ö ÀÖµµ·Ï ÇÔ.
-#   2002/06/15 smtp_log.d¸¦ shield_log.d·Î º¯°æ
-#   2002/04/07 ¸ÖÆ¼Æ÷Æ® ´ë±â ±â´ÉÀ» MyConfig¿Í ¿¬µ¿ÇÔ.
-#   2002/04/06 ¸ÖÆ¼Æ÷Æ®¸¦ ´ë±âÇÏ¸é¼­, ¿©·¯°¡Áö Á¾·ùÀÇ ·Î±×¸¦ µ¿½Ã¿¡
-#              ³²±æ ¼ö ÀÖµµ·Ï ¼öÁ¤
-#   2002/03/07 ±âº» confÆÄÀÏÀ» ~/conf/smtp_gw.conf·Î ¹Ù²Þ
-#   2001/11/28 smtp_gw.log ¶ó´Â ÆÄÀÏ ÀÌ¸§À» smtp_gw_YYYY.MM.DD.log ·Î ¹Ù²Þ.
-#   2001/11/08 check_descriptors_limit() Á¦°Å, BSD::Resource·Î Ä¡È¯
-#   2001/09/20 initially created.
-# ------------------------------------------------------------------------
+#!/bin/env perl
+
 use strict;
 
 use POSIX;
@@ -27,16 +9,14 @@ use IO::Socket::INET;
 use IO::Select;
 use Tie::RefHash;
 use VERSION;
-require 'flush.pl';
 
 $main::flush_duration = 1;
 $main::debug = 0;
 
-$main::LOG_DIR = "/KTMAIL/log";
+$main::LOG_DIR = "/tmp/LOG";
 
 $main::LOG_PORT = [];
-$main::LOG_PORT->[0] = "SMTP:52526";
-$main::LOG_PORT->[1] = "POP3:52527";
+$main::LOG_PORT->[0] = "TEST:52526";
 
 my $DEBUG = 0;
 sub ASSERT { if (! $_[0]) { Carp::confess("ASSERT\n"); } }
@@ -56,15 +36,15 @@ sub do_flush($)
 {
     my ($log_server) = @_;
 
-    #
-    # ·Î±× ¼­¹ö ÇÏ³ª°¡ °¡Áö°í ÀÖ´Â ³»ºÎ Á¤º¸.
-    #
-    # $log_server = { SUBDIR => 'SHIELD_LOG',
-    #                 PORT => 52526,
-    #                 SOCK => $SockUDP,
-    #                 FH => open_log_file_handle,
-    #                 MSGS => [$msg1, $msg2, $msg3, ...] # flushÇÏ±â Àü ·Î±×
-    #               }
+    # Data Structure for a specific server (for a specific UDP port)
+    # 
+    # $log_server = {
+    #     SUBDIR => 'TEST',
+    #     PORT => 52526,
+    #     SOCK => $SockUDP,
+    #     FH => open_log_file_handle,
+    #     MSGS => [$msg1, $msg2, $msg3, ...] # messages yet to be flushed
+    # }
     #
     # $msg = [$host, $ip, $msg_string]
     #
@@ -75,22 +55,23 @@ sub do_flush($)
     ASSERT(defined $log_server->{MSGS});   # [[$ip,$port,$msg], ...]
     ASSERT(@{$log_server->{MSGS}} > 0);
 
-    #
-    # ·Î±× µð·ºÅä¸®°¡ Á¦´ë·Î ÀÖ¾î¾ß ÇÔÀ» º¸ÀåÇØ¾ß ÇÔ.
-    # µð·ºÅä¸®°¡ ¾øÀ¸¸é »õ·Î ¸¸µç´Ù.
-    #
-    # ¸¸¾à ·Î±× ÆÄÀÏÇÚµéÀÌ ¿­·Á ÀÖ¾ú´Âµ¥, ÆÄÀÏÀÌ Á¸ÀçÇÏÁö ¾ÊÀ¸¸é,
-    # Áö¿öÁø °æ¿ìÀÓ. ´Ý°í »õ·Î ¿­¾î¾ß ÇÑ´Ù.
+    # =======================================
+    # if LOG dir doesn't exists, create one.
+    # =======================================
     ASSERT(defined $main::LOG_DIR);   # /usr/local/mobigen/CrediShield/logs
     my $log_path = "$main::LOG_DIR/$log_server->{SUBDIR}";
 
     $main::cur_time = time();
 
-    # ³¯Â¥º°·Î µð·ºÅä¸®¸¦ µû·Î ¸¸µë.
+    # -------------------------------
+    # Create directory for each day
+    # -------------------------------
     #                           YYYYmmdd
     my $today = POSIX::strftime("%Y%m%d", localtime($main::cur_time));
 
-    # ½Ã°£º°·Î ·Î±× ÆÄÀÏÀÌ µû·Î »ý±è.
+    # ---------------------------------------
+    # Create log file for each hour
+    # ---------------------------------------
     #                               HH
     my $cur_hour = POSIX::strftime("%H", localtime($main::cur_time));
     my $readable_time = POSIX::strftime("%H:%M:%S", localtime($main::cur_time));
@@ -121,8 +102,8 @@ sub do_flush($)
 
     if (! defined $log_server->{FH}) {
 
-        # ÆÄÀÏÀº Á¸ÀçÇÏ´Âµ¥, ¿­·ÁÀÖÁö ¾ÊÀº °æ¿ì
-        # -- Á×¾ú´Ù°¡ »ì¾Æ³µÀ» °æ¿ì, »õ·Î ¿­¾î¾ß ÇÔ.
+        # if there exists the log file, but not open
+        # -- perhaps the daemon has been dead. Need to open it again
 
         my $fh = new_fh();
         $log_server->{FH} = $fh;
@@ -130,20 +111,20 @@ sub do_flush($)
         open($fh, ">> $log_path/$today/$cur_hour");
     }
 
-    #
-    # ¿­·ÁÀÖ´Â ÆÄÀÏ ÇÚµé¿¡ ´ë°í ·Î±× ³»¿ªÀ» ±â·ÏÇÏ±â¸¸ ÇÏ¸é µÊ.
-    #
+    # --------------------------------------------------
+    # if it's open, we can write/append log data
+    # --------------------------------------------------
 
     ASSERT(defined $log_server->{FH});
 
     my $fh = $log_server->{FH};
 
     foreach my $msg (@{$log_server->{MSGS}}) {
-        # $msg->[0] ·Î±×¸¦ ¿äÃ»ÇÑ ¼­¹ö IP
-        # $msg->[1] Æ÷Æ®¹øÈ£ (UDP·Î ÀÓ½ÃÇÒ´çµÈ ¹øÈ£µéÀÓ)
-        # $msg->[2] ½ÇÁ¦ ·Î±×·Î ³²±æ ¸Þ½ÃÁö
+        # $msg->[0] IP Address
+        # $msg->[1] Port Number (UDP)
+        # $msg->[2] Log Message (text)
+
         # print F "$msg->[0] $msg->[2]";
-        # ÀÌºÎºÐ¿¡¼­ localserver¸¦ ÂïÁö ¸»°í ... timeÀ¸·Î ´ëÄ¡
 
         warn "$readable_time $msg->[2]" if $DEBUG;
 
@@ -156,22 +137,24 @@ sub do_flush($)
 
     $log_server->{MSGS} = [];
 
-    flush($fh); # Ç×»ó flush()ÇÏ´Â °ÍÀÌ ¸Â´ÂÁö Performance¸¦ º¸°í µûÁ® ºÁ¾ß ÇÔ.
+    flush($fh); # Check performance issue
 }
 
 sub handle_read($)
 {
-    my ($log_server) = @_; # ¸Þ½ÃÁö°¡ µµÂøÇÑ Æ÷Æ®¿¡ ÇØ´çÇÏ´Â ·Î±× ¼­¹ö
+    my ($log_server) = @_; # a UDP server, that is ready for the port
+                           # to which a message just arrived
 
-    # $log_server = { SUBDIR => 'SHIELD_LOG',
-    #                 PORT => 52526,
-    #                 SOCK => $SockUDP,
-    #                 MSGS => [$msg1, $msg2, $msg3, ...] # flushÇÏ±â Àü ·Î±×
-    #               }
+    # $log_server = {
+    #     SUBDIR => 'TEST',
+    #     PORT => 52526,
+    #     SOCK => $SockUDP,
+    #     MSGS => [$msg1, $msg2, $msg3, ...] # messages to be flushed
+    # }
 
     my $udp_sock = $log_server->{SOCK};
 
-    my ($host, $port, $msg) = $udp_sock->recv(); # µ¥ÀÌÅ¸¸¦ ÀÐ¾îµéÀÎ´Ù.
+    my ($host, $port, $msg) = $udp_sock->recv(); # read msg from the UDP socket
 
     if (! defined $msg) {
         warn "recv() fail." if $DEBUG;
@@ -180,20 +163,23 @@ sub handle_read($)
 
     warn "[$host, $port, $msg]" if $DEBUG;
 
-    # Á¤»óÀûÀ¸·Î ÀÐÇûÀ¸¸é, ÇØ´ç¼­¹öÀÇ ¹öÆÛ¿¡ ½×¾Æ µÐ´Ù.
+    # --------------------------------------
+    # just append the message to the buffer
+    # --------------------------------------
     push @{$log_server->{MSGS}}, [$host, $port, $msg];
 
+    # --------------------------------------
     # 2010.10.02 nomota LOG_MIRROR added
+    # --------------------------------------
     if (defined $main::LOG_MIRROR_IP) {
-warn "LOG_MIRROR";
+        warn "LOG_MIRROR";
         if (defined $main::LOG_MIRROR_IP->{$log_server->{SUBDIR}}) {
             my $mirror_ip = $main::LOG_MIRROR_IP->{$log_server->{SUBDIR}};
-warn "mirror_ip:$mirror_ip";
+            warn "mirror_ip:$mirror_ip";
             $udp_sock->send($mirror_ip, $log_server->{PORT}, $msg);
         }
     }
 }
-
 
 sub handle_mon_read($)
 {
@@ -271,43 +257,53 @@ sub main_loop()
 {
     ASSERT(defined $main::SELECT);
 
-    # ÀüÇüÀûÀÎ ¸ÖÆ¼ ¼ÒÄÏ ÇÚµé¸µ ·çÆ¾
+    # -------------------------------------------
+    # a typical multi-port handling routine
+    # -------------------------------------------
 
-    my $last_flushtime = time(); # ¸¶Áö¸·À¸·Î flushÇÑ ½Ã°£À» ±â·Ï
+    my $last_flushtime = time(); # remembers time of the last flush
 
     while (1) {
         $main::cur_time = time();
 
         ### WAIT ################################
 
+        warn "inner loop, select()";
         my @ready_socks = $main::SELECT->can_read(1.0);
 
         ### READ ################################
 
         foreach my $udp_sock (@ready_socks) {
-            # °¢°¢ÀÇ ÀÐ±â°¡´ÉÇÑ ¼ÒÄÏ º°·Î, ·Î±× ¸Þ½ÃÁö¸¦ ÀÐ¾î¼­
-            # ¼­¹öÀÇ MSGS ¹öÆÛ¿¡ ½×¾Æ µÐ´Ù.
-
+            # --------------------------------------------
+            # read messages from readable sockets
+            # append them to the MSGS buffer for each port
+            # --------------------------------------------
             my $log_server = $main::SOCK_SERVERS->{$udp_sock};
 
             ASSERT(defined $log_server);
 
-            # ·Î±× ¸ð´ÏÅÍ¸µ ¼­¹ö·Î Á¢¼ÓÀÌ µé¾î ¿À¸é º°µµ Ã³¸®ÇÑ´Ù
+            # --------------------------------------------
+            # check if it's the monitoring port
+            # --------------------------------------------
             if ($log_server == $main::log_mon_server) {
+                warn "handle_mon_read()";
                 handle_mon_read($log_server);
             } else {
+                warn "handle_read()";
                 handle_read($log_server);
             }
         } # foreach
 
         ### WRITE ###############################
 
-        # ÀÏÁ¤±â°£ ÁÖ±â·Î, ¸Þ¸ð¸®¿¡ ½×ÀÎ ·Î±×¸¦ ÆÄÀÏ·Î flush½ÃÅ²´Ù.
+        # ----------------------------------------------------------
+        # flush messages in MSGS buffer, periodically
+        # ----------------------------------------------------------
         if (($main::cur_time - $last_flushtime) >= $main::flush_duration) {
-            #
-            # °¢°¢ÀÇ Æ÷Æ®¿¡ ÇØ´çÇÏ´Â ·Î±× ¼­¹ö º°·Î,
-            # ÇÃ·¯½¬ ÇÒ °ÍÀÌ ÀÖ´Â °æ¿ì¿¡¸¸ flush¸¦ È£ÃâÇÑ´Ù.
-            #
+            # ----------------------------------------------
+            # flush log data into directory for each port
+            # ----------------------------------------------
+
             foreach my $port (keys %{$main::LOG_SERVERS}) {
                 my $log_server = $main::LOG_SERVERS->{$port};
 
@@ -323,46 +319,47 @@ sub main_loop()
     } # while (1)
 }
 
-
 sub run_log_d()
 {
+    # --------------------------------------------------------------
+    # Internal Data Structure:
     #
-    # ¿©·¯°³ÀÇ ·Î±×¼­¹ö°¡ ÇÑ ÇÁ·Î¼¼½º ¼Ó¿¡ °øÁ¸ÇÒ ¼ö ÀÖµµ·Ï ¸¸µç ÀÚ·á±¸Á¶:
-    #
-    #           °¢°¢ÀÇ ·Î±× ¼­¹ö´Â, µé¾î¿À´Â ¸Þ½ÃÁöÀÇ Æ÷Æ®¹øÈ£·Î ±¸ºÐµÈ´Ù.
-    #
+    # multiple log searvers are listening UPD ports independantly
+    # with separate buffer space, each server is dedicated to each UDP port
+    # --------------------------------------------------------------
     # $main::LOG_SERVERS = { $port => $log_server, $port => $log_server, ... }
     #
-    # { $port => { SUBDIR => 'SHIELD_LOG',
-    #              PORT => 52526,
-    #              SOCK => $SockUDP,
-    #              MSGS => [$msg1, $msg2, $msg3, ...] # flushÇÏ±â Àü ·Î±×
-    #             }
+    # $port => {
+    #     SUBDIR => 'TEST',
+    #     PORT => 52526,
+    #     SOCK => $SockUDP,
+    #     MSGS => [$msg1, $msg2, $msg3, ...] # messages to be flushed
     # }
     #
-    # ¼ÒÄÏÀ» ¾Ë¾ÒÀ» ¶§, ÇØ´ç ·Î±×¼­¹ö¸¦ Ã£¾Æ³»±â À§ÇÑ ÀÎµ¦½Ì ÇØ½¬
-    # $main::SOCK_SERVERS = { $sock => $log_server, $sock => $log_server, ... }
+    # Hash structure to lookup the socket->log_server data structure
     #
+    # $main::SOCK_SERVERS = { $sock => $log_server, $sock => $log_server, ... }
+    # ----------------------------------------------------------------------
 
     warn "FLUSH_DURATION: $main::flush_duration" if $DEBUG;
 
-## smtp_gw.conf¸¦ ./smtp_gw.conf¿¡¼­ ¸øÃ£¾ÒÀ»¶§¿¡ ¿¡·¯ ¹ß»ý. »èÁ¦
-## ASSERT¹®À¸·Î ´ëÃ¼
-
     ASSERT(defined($main::LOG_PORT));
 
-    $main::LOG_SERVERS = {}; # ¸ðµç ·Î±× ¼­¹ö¿¡ ÇØ´ç
+    $main::LOG_SERVERS = {}; # container of log servers
 
-    # string/integer°¡ ¾Æ´Ñ socket reference¸¦ ÇØ½¬ÀÇ Å°·Î ¾²±â À§ÇÑ ¹æ¹ý.
-    # Tie::RefHash¿¡ ÇØ½¬¸¦ Å¸ÀÌ½ÃÄÑ¼­ ¾²¸é µÊ.
+    # ---------------------------------------------------------------
+    # To make $socket reference as a key (non string/integer key)
+    # Tie::RefHash is necessary.
+    # ---------------------------------------------------------------
     my %sock_servers = ();
     tie %sock_servers, 'Tie::RefHash';
     $main::SOCK_SERVERS = \%sock_servers;
 
   {
-    # 2004/01/12 ·Î±× ¼­¹ö ÀÚÃ¼¸¦ ¸ð´ÏÅÍ¸µ ÇÏ±â À§ÇØ¼­
-    #            ·Î±× ¼­¹ö°¡ Æ¯Á¤ÇÑ TCP Æ÷Æ® ÇÏ³ª¸¦ listeningÇÏ°í
-    #            ÀÖµµ·Ï ¸¸µç´Ù.
+    # --------------------------------------------------
+    # 2004/01/12 Need to monitor the logd itself 
+    #     listens a TCP port (monitoring port)
+    # --------------------------------------------------
     ASSERT(defined $main::svc_conf->{LOG_MON_PORT});
 
     my $log_mon_sock = new IO::Socket::INET(
@@ -417,18 +414,22 @@ sub run_log_d()
 
         $main::LOG_SERVERS->{$PORT} = $log_server;
 
-        # ¼ÒÄÏÀ» ¾Ë¾ÒÀ» ¶§, ÇØ´ç ·Î±×¼­¹ö¸¦ Ã£¾Æ³»±â À§ÇÑ ÇØ½¬
+        # -------------------------------
+        # Quick reverse lookup hash
+        # -------------------------------
         $main::SOCK_SERVERS->{$socket} = $log_server;
     } # for
 
-    # ¿©·¯ °³ÀÇ ¼ÒÄÏÀ» µ¿½Ã¿¡ read ÇÏ±â À§ÇÑ select±¸Á¶.
+    # --------------------------------------------------------------
+    # select for simultaneous accepting data among multiple ports
+    # --------------------------------------------------------------
     $main::SELECT = new IO::Select();
     foreach my $socket (keys %{$main::SOCK_SERVERS}) {
         # warn "main::SELECT->add($socket)" if $DEBUG;
         $main::SELECT->add($socket);
     } # for
 
-    # ¸ÞÀÎ ·çÇÁ ÁøÀÔ
+    # The main loop
     main_loop();
 }
 
@@ -446,10 +447,6 @@ sub read_config($)
 
     ASSERT(-e $conf_file) if $DEBUG;
 
-    # $conf->{LOG_DIR} = "$ENV{KTMAIL_ROOT}/log";
-    # $conf->{LOG_PORT} = [];
-    # $conf->{LOG_MIRROR_IP} = {};
-
     local(*F);
 
     if (! open(F, "$conf_file")) {
@@ -466,7 +463,7 @@ sub read_config($)
 
         if ($line =~ /^LOG_DIR (\S+)/i) {
             my $log_dir = $1;
-warn "LOG_DIR: $log_dir" if $DEBUG;
+            warn "LOG_DIR: $log_dir" if $DEBUG;
             $conf->{LOG_DIR} = $log_dir;
             next;
         }
@@ -478,7 +475,7 @@ warn "LOG_DIR: $log_dir" if $DEBUG;
                     if (! defined($conf->{LOG_PORT})) {
                         $conf->{LOG_PORT} = [];
                     }
-warn "LOG_PORT: $log_port" if $DEBUG;
+                    warn "LOG_PORT: $log_port" if $DEBUG;
                     push @{$conf->{LOG_PORT}}, $log_port;
                 }
             }
@@ -494,7 +491,7 @@ warn "LOG_PORT: $log_port" if $DEBUG;
                         $conf->{LOG_MIRROR_IP} = {};
                     }
 
-warn "LOG_MIRROR $code:$ip";
+                    warn "LOG_MIRROR $code:$ip";
                     $conf->{LOG_MIRROR_IP}->{$code} = $ip;
                 }
             }
@@ -535,29 +532,19 @@ MAIN:
         $main::debug = 0 if ($arg =~ /^\-normal$/ || $arg =~ /^\-n$/);
     }
 
+    $main::LOG_DIR = "/tmp/LOG";
+    $main::LOG_PORT = "9998";
+
     $DEBUG = $main::debug if ($main::debug);
 
-    $main::conf_file = "/usr/local/mobigen/CrediMail/conf/dmail.conf";
-    $main::conf_file = "$ENV{KTMAIL_ROOT}/conf/dmail.conf"
-                          if (defined $ENV{KTMAIL_ROOT});
-
-
+    my $conf_file = "./svc.conf";
     foreach my $arg (@ARGV) {
-        $main::conf_file = $arg if ($arg =~ /\.conf$/);
+        $conf_file = $arg if ($arg =~ /\.conf$/);
     }
 
-    # ÆÄÀÏ·ÎºÎÅÍ ¼³Á¤°ªÀ» ÀÐ¾îµéÀÓ. µðÆúÆ®°ªº¸´Ù ¼³Á¤ÆÄÀÏÀÌ ´õ ³ôÀº ¿ì¼±¼øÀ§!
-    my $conf = read_config($main::conf_file);
-
-    $main::LOG_DIR = $conf->{LOG_DIR};
-    $main::LOG_PORT = $conf->{LOG_PORT};
-
+    $main::svc_conf = read_config($conf_file);
 
   {
-    # 2004/01/12 ·Î±× ¼­¹ö ÀÚÃ¼¸¦ ¸ð´ÏÅÍ¸µ ÇÏ±â À§ÇØ¼­,
-    #            ·Î±× ¼­¹ö ¸ð´ÏÅÍ¸µ ¿ë TCP Æ÷Æ®¸¦ ÇÏ³ª Á¤ÀÇÇÑ´Ù.
-    $main::svc_conf = read_config("./svc.conf");
-
     if (defined $main::svc_conf->{LOG_DIR}) {
         $main::LOG_DIR = $main::svc_conf->{LOG_DIR};
     }
@@ -573,7 +560,6 @@ MAIN:
     $main::LOG_MIRROR_IP = $main::svc_conf->{LOG_MIRROR_IP};
   }
 
-    # ÄÚ¸Çµå ¶óÀÎÀ¸·Î ÀÔ·ÂÇÑ °ÍÀÌ ¼³Á¤ÆÄÀÏ º¸´Ù ¿ì¼±¼øÀ§°¡ ³ôÀ½.
     my $LOG_PORT = [];
     foreach my $arg (@ARGV) {
         $main::flush_duration = $1 if ($arg =~ /flush_duration.(\d+)/);
@@ -587,19 +573,17 @@ MAIN:
 
     ASSERT(defined $main::LOG_DIR);
 
-    # ÀÔ·ÂÀ¸·Î log_ports ÀÌ ÇÏ³ª¶óµµ µé¾î¿À¸é, ±âÁ¸ ·Î±× ITEMÀº ¸ðµÎ ¹«½Ã.
     if (@{$LOG_PORT} > 0) {
         $main::LOG_PORT = $LOG_PORT;
     }
 
-    $SIG{CHLD} = \&REAPER;
-    # µð¹ö±ë ¸ðµå
+    # if it's in debug mode don't run as a daemon
     if ($main::debug) {
         run_log_d();
         POSIX::_exit(0);
     } # if
 
-    # µ¥¸ó ¸ðµå
+    # double fork to make it run as daemon
     if (fork() == 0) {
         if (fork() == 0) {
             run_log_d();
