@@ -35,3 +35,14 @@ log sources as possible.
 
 Logd writes data into ~/$CODE/YYYYmmdd/HH files, where $CODE represents the source of
 the log.
+
+
+How to use logd?
+================
+
+First download the logd-versi-o-n.tar.gz and untar/ungzip - results files in ./logd/
+In ./logd/ dir there are two scripts ./run.sh and ./stop.sh - you can start and stop
+the daemon by using those scripts.
+
+To configure, you need to edit ./svc.conf file. 
+
