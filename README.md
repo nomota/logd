@@ -11,4 +11,5 @@ Here's the requirement sets for the log daemon.
 (4) UDP-based, so that no lock problem occurs.
 (5) Can be monitored remotely, via a TCP port.
 (6) Configurable in a very simple configuration file.
+(7) Language independent. (accepts logs from S/Ws in different languages)
 
