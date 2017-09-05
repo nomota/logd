@@ -10,7 +10,7 @@ use SockUDP;
 use IO::Socket::INET;
 use IO::Select;
 use Tie::RefHash;
-use VERSION;
+# use VERSION;
 
 $main::flush_duration = 1;
 $main::debug = 0;
