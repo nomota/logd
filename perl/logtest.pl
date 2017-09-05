@@ -15,6 +15,6 @@ MAIN:
 
     my $client = new SockUDP();
 
-    $client->send($ARGV[0], $ARGV[2], $ARGV[3]);
+    $client->send($ARGV[0], $ARGV[1], $ARGV[2]);
 }
 
