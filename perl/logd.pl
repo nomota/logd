@@ -11,6 +11,7 @@ use IO::Socket::INET;
 use IO::Select;
 use Tie::RefHash;
 # use VERSION;
+require 'flush.pl';
 
 $main::flush_duration = 1;
 $main::debug = 0;
